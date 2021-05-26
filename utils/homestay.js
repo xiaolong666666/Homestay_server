@@ -25,7 +25,19 @@ const isHomestay_type = type => {
     return homestay_type
 }
 
+const isPrice_type = type => {
+    let price_range = 'homestay_price <= 1000'
+    switch (type) {
+        case 1: price_range = 'homestay_price < 1000'; break;
+        case 2: price_range = 'homestay_price >= 1000 AND homestay_price < 1500'; break;
+        case 3: price_range = 'homestay_price >= 1500 AND homestay_price < 2000'; break;
+        case 4: price_range = 'homestay_price >= 2000'; break;
+    }
+    return price_range
+}
+
 module.exports = {
     isHomestay_area,
-    isHomestay_type
+    isHomestay_type,
+    isPrice_type,
 }

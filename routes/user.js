@@ -11,8 +11,8 @@ const token_key = "Little_Dragon"
 const cacheFolder = 'public/images/'
 
 /* GET users listing. */
-router.get('/', function(req, res) {
-  res.send('respond with a resource');
+router.get('/', (req, res) => {
+  res.send('respond with a resource')
 })
 
 // 用户注册
@@ -88,8 +88,65 @@ router.post('/sign_check', (req, res) => {
   })
 })
 
+// 用户通知中房源预约
+router.post('/system_inform', (req, res) => {
+  const { headers: { authorization } } = req
+  jwt.verify(authorization, token_key, (error, decoded) => {
+    if (error) {
+      res.json({ code: 0, message: error.message })
+    } else {
+      const { user_id } = decoded
+      const sqlSelectStr = `SELECT * from reserve WHERE landlord_id=${user_id} ORDER BY reserve_check_time ASC`
+      const informSource = []
+      conn.query(sqlSelectStr, (error, results) => {
+        if (error) {
+          res.json({ code: 0, informSource: [] })
+        } else {
+          let length = results.length
+          results.map(({
+            homestay_id,
+            user_id,
+            reserve_id,
+            reserve_check_time,
+            reserve_stay_time,
+            reserve_note,
+          }) => {
+            const inform = { homestay_id, user_id, reserve_id, reserve_check_time, reserve_stay_time, reserve_note }
+            const sqlSelectHomestay = `SELECT * from homestay WHERE homestay_id=${homestay_id}`
+            const sqlSelectUser = `SELECT * from user WHERE user_id=${user_id}`
+            conn.query(sqlSelectHomestay, (error_homestay, result_homestay) => {
+              if (error_homestay) {
+                res.json({ code: 0, informSource: [] })
+              } else {
+                Object.assign(inform, {
+                  homestay_name: result_homestay[0]['homestay_name'],
+                  homestay_type: result_homestay[0]['homestay_type'],
+                })
+                conn.query(sqlSelectUser, (error_user, result_user) => {
+                  if (error_user) {
+                    res.json({ code: 0, informSource: [] })
+                  } else {
+                    Object.assign(inform, {
+                      user_role: result_user[0]['user_role'],
+                      user_phone: result_user[0]['user_phone'],
+                      user_avatar: result_user[0]['user_avatar'],
+                    })
+                    informSource.push(inform)
+                    length--;
+                    length === 0 && res.send({ code: 200, informSource })
+                  }
+                })
+              }
+            })
+          })
+        }
+      })
+    }
+  })
+})
+
 // 用户更改头像
-router.post('/avatar', function (req, res) {
+router.post('/avatar', (req, res) => {
   const userDirPath = cacheFolder + "avatar";
   if (!fs.existsSync(userDirPath)) {
     fs.mkdirSync(userDirPath);
@@ -110,6 +167,7 @@ router.post('/avatar', function (req, res) {
       case 'image/jpeg': extName = 'jpg'; break;
       case 'image/png': extName = 'png'; break;
       case 'image/x-png': extName = 'png'; break;
+      case 'image/gif': extName = 'gif'; break;
     }
     const { headers: { host, authorization }, query: { flag } } = req
     jwt.verify(authorization, token_key, (error, decoded) => {
@@ -139,16 +197,14 @@ router.post('/avatar', function (req, res) {
 // 修改个人信息
 router.post('/modify_personal_information', (req, res) => {
   const { body: { nickName, name, idcard, phone, password, newpassword, gender, avatar } } = req
-  console.log(!isEmpty(avatar))
   let sqlUpdateStr
   if (!password && !newpassword) {
-    sqlUpdateStr = `UPDATE user SET ${nickName ? `user_nickname='${nickName}',` : ''} ${name ? `user_name='${name}',` : ''} ${idcard ? `user_idcard='${idcard}',` : ''} ${gender ? `user_gender=${gender}` : ''} ${!isEmpty(avatar) ? `user_avatar='${avatar}'` : ''} WHERE user_phone = '${phone}'`
+    sqlUpdateStr = `UPDATE user SET ${nickName ? `user_nickname='${nickName}',` : ''} ${name ? `user_name='${name}',` : ''} ${idcard ? `user_idcard='${idcard}',` : ''} ${gender ? `user_gender=${gender}${!isEmpty(avatar) ? ',' : ''}` : ''} ${!isEmpty(avatar) ? `user_avatar='${avatar}'` : ''} WHERE user_phone = '${phone}'`
   } else {
     sqlUpdateStr = `UPDATE user SET ${nickName ? `user_nickname='${nickName}',` : ''} ${name ? `user_name='${name}',` : ''} ${idcard ? `user_idcard='${idcard}',` : ''} ${gender ? `user_gender=${gender},` : ''} ${newpassword ? `user_password='${md5(newpassword)}'` : ''} ${!isEmpty(avatar) ? `user_avatar='${avatar}'` : ''} WHERE user_phone='${phone}' AND user_password='${md5(password)}'`
   }
-  conn.query(sqlUpdateStr, (error, results, fields) => {
+  conn.query(sqlUpdateStr, (error, results) => {
     if (error) {
-      console.log(error)
       res.json({ code: 0, message: '很遗憾，修改个人信息失败！' })
     } else {
       const sqlSelectStr = `SELECT * from user WHERE user_phone = '${phone}'`
@@ -164,15 +220,15 @@ router.post('/modify_personal_information', (req, res) => {
 })
 
 // 查询房屋
-router.post('/homestay', function (req, res) {
+router.post('/homestay', (req, res) => {
   const { headers: { authorization } } = req
   jwt.verify(authorization, token_key, (error, decoded) => {
     if (error) {
-      res.json({ code: 0, message: error.code })
+      res.json({ code: 0, message: error.message })
     } else {
       const { user_id } = decoded
-      const sqlSelectStr = `SELECT * from homestay WHERE landlord_id = ${user_id}`
-      conn.query(sqlSelectStr, (error, results, fields) => {
+      const sqlSelectStr = `SELECT * from homestay WHERE landlord_id=${user_id}`
+      conn.query(sqlSelectStr, (error, results) => {
         if (error) {
           res.json({ code: 0, homestay: [] })
         } else {
@@ -189,7 +245,7 @@ router.post('/homestay', function (req, res) {
 })
 
 // 添加房源图片
-router.post('/homestay/picture', function (req, res) {
+router.post('/homestay/picture', (req, res) => {
   const userDirPath = cacheFolder + "homestay_picture";
   if (!fs.existsSync(userDirPath)) {
     fs.mkdirSync(userDirPath);
@@ -233,15 +289,15 @@ router.post('/homestay/picture', function (req, res) {
 })
 
 // 添加房源
-router.post('/homestay/issue', function (req, res) {
+router.post('/homestay/issue', (req, res) => {
   const {
     headers: { authorization },
-    body: { homestay_name, homestay_type, homestay_pirce, homestay_address, homestay_facility, homestay_recommend, homestay_picture }
+    body: { homestay_name, homestay_type, homestay_price, homestay_address, homestay_facility, homestay_recommend, homestay_picture }
   } = req
   const homestay_area = isHomestay_area(homestay_address)
   const facilityToJSON = JSON.stringify(homestay_facility)
   const pictureToJSON = JSON.stringify(homestay_picture)
-  const homestay_arr = [homestay_name, homestay_type, Number(homestay_pirce), homestay_area, homestay_address, facilityToJSON, homestay_recommend, pictureToJSON]
+  const homestay_arr = [homestay_name, homestay_type, Number(homestay_price), homestay_area, homestay_address, facilityToJSON, homestay_recommend, pictureToJSON]
   jwt.verify(authorization, token_key, (error, decoded) => {
     if (error) {
       switch (error.name) {
@@ -251,14 +307,13 @@ router.post('/homestay/issue', function (req, res) {
       }
     } else {
       const { user_id } = decoded
-      const sqlInsertStr = `INSERT INTO homestay(landlord_id, homestay_name, homestay_type, homestay_pirce, homestay_area, homestay_address, homestay_facility, homestay_recommend, homestay_picture) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      const sqlInsertStr = `INSERT INTO homestay(landlord_id, homestay_name, homestay_type, homestay_price, homestay_area, homestay_address, homestay_facility, homestay_recommend, homestay_picture) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`
       homestay_arr.unshift(user_id)
       conn.query(sqlInsertStr, homestay_arr, (error, results, fields) => {
         if (error) {
-          res.json({ code: 0, message: error.code })
+          res.json({ code: 0, message: error.message })
         } else {
           if (!isEmpty(results)) {
-            console.log('results', results)
             res.json({ code: 200, message: '发布房源成功！' })
           } else {
             res.json({ code: 0, message: '发布房源失败！' })
@@ -270,15 +325,15 @@ router.post('/homestay/issue', function (req, res) {
 })
 
 // 获取房源详情
-router.get('/homestay/detail', function (req, res) {
+router.get('/homestay/detail', (req, res) => {
   const { headers: { authorization }, query: { homestay_id } } = req
   const id = Number(homestay_id)
   jwt.verify(authorization, token_key, (error) => {
     if (error) {
-      res.json({ code: 0, message: error.code })
+      res.json({ code: 0, message: error.message })
     } else {
       const sqlSelectStr = `SELECT * from homestay WHERE homestay_id = ${id}`
-      conn.query(sqlSelectStr, (error, results, fields) => {
+      conn.query(sqlSelectStr, (error, results) => {
         if (error) {
           res.json({ code: 0, homestay_detail: {} })
         } else {
@@ -295,10 +350,10 @@ router.get('/homestay/detail', function (req, res) {
 })
 
 // 修改房源
-router.post('/homestay/modify', function (req, res) {
+router.post('/homestay/modify', (req, res) => {
   const {
     headers: { authorization },
-    body: { homestay_id, homestay_name, homestay_type, homestay_pirce, homestay_address, homestay_facility, homestay_recommend, homestay_picture }
+    body: { homestay_id, homestay_name, homestay_type, homestay_price, homestay_address, homestay_facility, homestay_recommend, homestay_picture }
   } = req
   const homestay_area = isHomestay_area(homestay_address)
   const facilityToJSON = JSON.stringify(homestay_facility)
@@ -311,11 +366,10 @@ router.post('/homestay/modify', function (req, res) {
         default: res.json({ code: 0, message: 'token无效' })
       }
     } else {
-      const sqlUpdateStr = `UPDATE homestay SET homestay_name = '${homestay_name}', homestay_type = ${homestay_type}, homestay_pirce = ${homestay_pirce}, homestay_area = ${homestay_area}, homestay_address = '${homestay_address}', homestay_facility = '${facilityToJSON}', homestay_recommend = '${homestay_recommend}', homestay_picture = '${pictureToJSON}' WHERE homestay_id = ${homestay_id}`
-      conn.query(sqlUpdateStr, (error, results, fields) => {
+      const sqlUpdateStr = `UPDATE homestay SET homestay_name = '${homestay_name}', homestay_type = ${homestay_type}, homestay_price = ${homestay_price}, homestay_area = ${homestay_area}, homestay_address = '${homestay_address}', homestay_facility = '${facilityToJSON}', homestay_recommend = '${homestay_recommend}', homestay_picture = '${pictureToJSON}' WHERE homestay_id = ${homestay_id}`
+      conn.query(sqlUpdateStr, (error, results) => {
         if (error) {
-          console.log(error)
-          res.json({ code: 0, message: error.code })
+          res.json({ code: 0, message: error.message })
         } else {
           if (!isEmpty(results)) {
             res.json({ code: 200, message: '编辑房源成功！' })
@@ -329,7 +383,7 @@ router.post('/homestay/modify', function (req, res) {
 })
 
 // 删除房源
-router.get('/homestay/delete', function (req, res) {
+router.get('/homestay/delete', (req, res) => {
   const { headers: { authorization }, query: { homestay_id } } = req
   jwt.verify(authorization, token_key, (error) => {
     if (error) {
@@ -342,7 +396,7 @@ router.get('/homestay/delete', function (req, res) {
       const sqlDeleteStr = `DELETE FROM homestay WHERE homestay_id = ${homestay_id}`
       conn.query(sqlDeleteStr, (error, results, fields) => {
         if (error) {
-          res.json({ code: 0, message: error.code })
+          res.json({ code: 0, message: error.message })
         } else {
           if (!isEmpty(results)) {
             res.json({ code: 200, message: '删除房源成功！' })
@@ -356,11 +410,11 @@ router.get('/homestay/delete', function (req, res) {
 })
 
 // 查询我的点赞房源
-router.post('/homestay_like', function (req, res) {
+router.post('/homestay_like', (req, res) => {
   const { headers: { authorization } } = req
   jwt.verify(authorization, token_key, (error, decoded) => {
     if (error) {
-      res.json({ code: 0, message: error.code })
+      res.json({ code: 0, message: error.message })
     } else {
       const { user_id } = decoded
       const sqlSelectStr = `SELECT user_like from user WHERE user_id = ${user_id}`
@@ -370,6 +424,7 @@ router.post('/homestay_like', function (req, res) {
         } else {
           results = JSON.parse(results[0]['user_like'])
           const homestay_like = []
+          isEmpty(results) && res.send({ code: 200, homestay_like })
           let length = results.length;
           results.forEach(item => {
             const sqlHomestaySelectStr = `SELECT * from homestay WHERE homestay_id=${item}`
@@ -390,32 +445,36 @@ router.post('/homestay_like', function (req, res) {
 })
 
 // 查询我的收藏房源
-router.post('/homestay_favorites', function (req, res) {
+router.post('/homestay_favorites', (req, res) => {
   const { headers: { authorization } } = req
   jwt.verify(authorization, token_key, (error, decoded) => {
     if (error) {
-      res.json({ code: 0, message: error.code })
+      res.json({ code: 0, message: error.message })
     } else {
       const { user_id } = decoded
       const sqlSelectStr = `SELECT user_favorites from user WHERE user_id = ${user_id}`
       conn.query(sqlSelectStr, (error, results) => {
         if (error) {
-          console.log('error', error)
           res.json({ code: 0, homestay_favorites: [] })
         } else {
           results = JSON.parse(results[0]['user_favorites'])
           const homestay_favorites = []
+          isEmpty(results) && res.send({ code: 200, homestay_favorites })
           let length = results.length;
           results.forEach(item => {
             const sqlHomestaySelectStr = `SELECT * from homestay WHERE homestay_id=${item}`
             conn.query(sqlHomestaySelectStr, (error, result) => {
-              homestay_favorites.push({
-                ...result[0],
-                homestay_facility: JSON.parse(result[0].homestay_facility),
-                homestay_picture: JSON.parse(result[0].homestay_picture),
-              })
-              length--;
-              length === 0 && res.send({ code: 200, homestay_favorites })
+              if (error) {
+                res.json({ code: 0, homestay_favorites: [] })
+              } else {
+                homestay_favorites.push({
+                  ...result[0],
+                  homestay_facility: JSON.parse(result[0].homestay_facility),
+                  homestay_picture: JSON.parse(result[0].homestay_picture),
+                })
+                length--;
+                length === 0 && res.send({ code: 200, homestay_favorites })
+              }
             })
           })
         }
@@ -424,12 +483,86 @@ router.post('/homestay_favorites', function (req, res) {
   })
 })
 
-// 查询我的评价
-router.post('/homestay_appraisal', function (req, res) {
+// 查询我的预约房源
+router.post('/homestay_reserve', (req, res) => {
   const { headers: { authorization } } = req
   jwt.verify(authorization, token_key, (error, decoded) => {
     if (error) {
-      res.json({ code: 0, message: error.code })
+      res.json({ code: 0, message: error.message })
+    } else {
+      const { user_id } = decoded
+      const sqlSelectStr = `SELECT * from reserve WHERE user_id = ${user_id}`
+      conn.query(sqlSelectStr, (error, results) => {
+        if (error) {
+          res.json({ code: 0, homestay_favorites: [] })
+        } else {
+          const homestay_reserve = []
+          isEmpty(results) && res.send({ code: 200, homestay_reserve })
+          let length = results.length;
+          results.forEach(({
+            homestay_id,
+            reserve_id,
+            reserve_check_time,
+            reserve_stay_time,
+            reserve_note,
+          }) => {
+            const sqlHomestaySelectStr = `SELECT * from homestay WHERE homestay_id=${homestay_id}`
+            conn.query(sqlHomestaySelectStr, (error, result) => {
+              if (error) {
+                res.json({ code: 0, homestay_favorites: [] })
+              } else {
+                homestay_reserve.push({
+                  homestay_name: result[0]['homestay_name'],
+                  homestay_id,
+                  reserve_id,
+                  reserve_check_time,
+                  reserve_stay_time,
+                  reserve_note,
+                })
+                length--;
+                length === 0 && res.send({ code: 200, homestay_reserve })
+              }
+            })
+          })
+        }
+      })
+    }
+  })
+})
+
+// 取消我的预约房源
+router.get('/homestay/reserve/delete', (req, res) => {
+  const { headers: { authorization }, query: { reserve_id } } = req
+  jwt.verify(authorization, token_key, (error) => {
+    if (error) {
+      switch (error.name) {
+        case 'JsonWebTokenError': res.json({ code: 0, message: 'token无效' }); break;
+        case 'TokenExpireError': res.json({ code: 0, message: 'token过期' }); break;
+        default: res.json({ code: 0, message: 'token无效' })
+      }
+    } else {
+      const sqlDeleteStr = `DELETE FROM reserve WHERE reserve_id = ${reserve_id}`
+      conn.query(sqlDeleteStr, (error, results) => {
+        if (error) {
+          res.json({ code: 0, message: error.message })
+        } else {
+          if (!isEmpty(results)) {
+            res.json({ code: 200, message: '删除评价成功！' })
+          } else {
+            res.json({ code: 0, message: '删除评价失败！' })
+          }
+        }
+      })
+    }
+  })
+})
+
+// 查询我的评价
+router.post('/homestay_appraisal', (req, res) => {
+  const { headers: { authorization } } = req
+  jwt.verify(authorization, token_key, (error, decoded) => {
+    if (error) {
+      res.json({ code: 0, message: error.message })
     } else {
       const { user_id } = decoded
       // 查询用户评论
@@ -439,6 +572,7 @@ router.post('/homestay_appraisal', function (req, res) {
           res.json({ code: 0, homestay_appraisal: [] })
         } else {
           const homestay_appraisal = []
+          isEmpty(results) && res.send({ code: 200, homestay_appraisal })         
           let length = results.length;
           results.forEach(({
             comment_id,
@@ -470,7 +604,7 @@ router.post('/homestay_appraisal', function (req, res) {
 })
 
 // 删除我的评论
-router.get('/homestay/comment/delete', function (req, res) {
+router.get('/homestay/comment/delete', (req, res) => {
   const { headers: { authorization }, query: { comment_id } } = req
   jwt.verify(authorization, token_key, (error) => {
     if (error) {
@@ -483,8 +617,7 @@ router.get('/homestay/comment/delete', function (req, res) {
       const sqlDeleteStr = `DELETE FROM comment WHERE comment_id = ${comment_id}`
       conn.query(sqlDeleteStr, (error, results) => {
         if (error) {
-          console.log(error)
-          res.json({ code: 0, message: error.code })
+          res.json({ code: 0, message: error.message })
         } else {
           if (!isEmpty(results)) {
             res.json({ code: 200, message: '删除评价成功！' })
